@@ -138,8 +138,6 @@ python>=3.8
 
 PRs welcome! If you have other Office/document chores you’d like to automate (batch find/replace in DOCX, auto-export to PDF, etc.), open an issue or drop a script in a PR.
 
----
-
 ## License
 
 MIT — do what you like, but no warranties. Enjoy!
