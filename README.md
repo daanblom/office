@@ -6,10 +6,6 @@ A small collection of Python scripts to speed up repetitive Microsoft Office and
 - `footerMover.py` — lightweight GUI automation to step through slides and perform a repeated footer action (delete → paste → page-down → click). Handy when doing bulk footer adjustments by hand but with robot speed.
 - `footerRemover.py` — companion GUI automation intended to remove footers across slides (see usage below).
 
-> Repo: `https://github.com/daanblom/office`  (main branch)
-
----
-
 ## Quick start
 
 ```bash
@@ -26,8 +22,6 @@ pip install -r requirements.txt
 
 > `PPTXtoPOTX.py` uses only Python’s standard library and works without any extra packages.  
 > The GUI scripts (`footerMover.py`, `footerRemover.py`) require `pyautogui` and `keyboard`.
-
----
 
 ## Scripts
 
@@ -55,8 +49,6 @@ python PPTXtoPOTX.py /path/to/root
 - Cross-platform (Windows/macOS/Linux)
 - No Office install needed
 - Avoids Protected View, template redirection, and COM/automation quirks
-
----
 
 ### 2) footerMover.py
 
@@ -86,8 +78,6 @@ python footerMover.py
 - Disable PowerPoint animations/transitions to keep timing stable.
 - If some actions miss, adjust the `time.sleep(0.12)` delays in the script (slower machines may need `0.2`–`0.3`).
 
----
-
 ### 3) footerRemover.py
 
 A sibling utility intended to help remove footers at speed via GUI automation.  
@@ -103,8 +93,6 @@ python footerRemover.py
 - Press `q` to exit.
 
 > Tip: If you need a different sequence (e.g., select footer placeholder → `Delete` → `PageDown`), tweak the `pyautogui` calls to match your workflow.
-
----
 
 ## Requirements
 
@@ -129,15 +117,11 @@ python>=3.8
 
 > macOS users: `keyboard` doesn’t support macOS; use `pynput` as an alternative (you can adapt the scripts by replacing the key detection loop). `pyautogui` on macOS also needs **Accessibility** permissions (System Settings → Privacy & Security → Accessibility).
 
----
-
 ## Safety & permissions
 
 - **Windows (UAC):** running the GUI scripts from an elevated terminal may be required for `keyboard` to detect global keys in other apps.
 - **macOS:** grant Accessibility permissions to your terminal/IDE for `pyautogui` to control the mouse/keyboard.
 - **Display scaling:** if clicks land slightly off, check your OS/UI scaling; `pyautogui` assumes the current screen coordinate system.
-
----
 
 ## Common issues & fixes
 
@@ -149,8 +133,6 @@ python>=3.8
 
 - *Accidentally spamming inputs*  
   Press `q` in the terminal to exit; if needed, add an emergency sleep or a longer starting delay.
-
----
 
 ## Contributing
 
