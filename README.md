@@ -2,7 +2,7 @@
 
 A small collection of Python scripts to speed up repetitive Microsoft Office and document tasks.
 
-- `PPTXtoPOTX.py` — convert **all** `.pptx` files in a folder tree into `.potx` templates **next to the source** (no Office required).
+- `PPTXtoPOTX.py` — convert all `.pptx` files in a folder tree into `.potx` templates (no Office required).
 - `footerMover.py` — lightweight GUI automation to step through slides and perform a repeated footer action (delete → paste → page-down → click). Handy when doing bulk footer adjustments by hand but with robot speed.
 - `footerRemover.py` — companion GUI automation intended to remove footers across slides (see usage below).
 
