@@ -16,7 +16,7 @@ python -m venv .venv
 # macOS/Linux
 source .venv/bin/activate
 
-# 2) Install requirements for GUI scripts
+# 2) Install requirements for scripts (if necessary)
 pip install -r requirements.txt
 ```
 
