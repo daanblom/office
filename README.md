@@ -1,4 +1,4 @@
-# Office Automations (Python)
+# Office Automations
 
 A small collection of Python scripts to speed up repetitive Microsoft Office and document tasks.
 
@@ -9,7 +9,7 @@ A small collection of Python scripts to speed up repetitive Microsoft Office and
 ## Quick start
 
 ```bash
-# 1) Create a virtual env (optional but recommended)
+# 1) Create a virtual env (optional but recommended when installing packages)
 python -m venv .venv
 # Windows
 .venv\Scripts\activate
@@ -25,9 +25,9 @@ pip install -r requirements.txt
 
 ## Scripts
 
-### 1) PPTXtoPOTX.py
+### PPTXtoPOTX.py
 
-Convert every `*.pptx` under a chosen root into a `*.potx` **in the same folder** (same filename, new extension).  
+Convert every `*.pptx` under a chosen root into a `*.potx` in the same folder (same filename, new extension).  
 This is done by editing the Open XML ZIP package (`[Content_Types].xml`) — no PowerPoint/COM involved.
 
 **Usage**
@@ -42,7 +42,7 @@ python PPTXtoPOTX.py /path/to/root
 
 **Options**
 
-- `--overwrite` — overwrite existing `.potx` files (default is to skip).
+- `--overwrite` — overwrite existing `.potx` files (off by default).
 
 **Why this approach?**
 
@@ -50,7 +50,7 @@ python PPTXtoPOTX.py /path/to/root
 - No Office install needed
 - Avoids Protected View, template redirection, and COM/automation quirks
 
-### 2) footerMover.py
+### footerMover.py
 
 A tiny “human-in-the-loop” helper that repeats a key sequence while you keep PowerPoint (or another app) focused.
 
@@ -73,12 +73,11 @@ python footerMover.py
 - When the terminal says “Starting in 10 seconds…”, switch to PowerPoint.
 - Press `q` any time to stop.
 
-**Pro tips**
+**Tip**
 
-- Disable PowerPoint animations/transitions to keep timing stable.
 - If some actions miss, adjust the `time.sleep(0.12)` delays in the script (slower machines may need `0.2`–`0.3`).
 
-### 3) footerRemover.py
+### footerRemover.py
 
 A sibling utility intended to help remove footers at speed via GUI automation.  
 Current pattern is similar to `footerMover.py`: it simulates keystrokes/clicks so you can power through a deck.
@@ -136,7 +135,8 @@ python>=3.8
 
 ## Contributing
 
-PRs welcome! If you have other Office/document chores you’d like to automate (batch find/replace in DOCX, auto-export to PDF, etc.), open an issue or drop a script in a PR.
+PRs welcome! If you have other Office/document chores you’d like to automate,
+open an issue or drop a script in a PR.
 
 ## License
 
