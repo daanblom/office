@@ -1,0 +1,12 @@
+A line of text here
+%SKIP
+Header
+%SKIP
+First Name Last Name
+%FIRSTENTRY
+Street
+1234 AA
+City
+hello@email.com
+%FIRSTENTRY
+%ENTERDATE
