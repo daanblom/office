@@ -1,4 +1,4 @@
-# Office Automations
+# Office Automations (Pre Release)
 
 A small collection of Python scripts to speed up repetitive Microsoft Office and document tasks.
 
