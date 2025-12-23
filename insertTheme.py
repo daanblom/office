@@ -4,22 +4,35 @@ import os
 import shutil
 import tempfile
 
-THEME_ZIP_PATH = 'ppt/theme/theme1.xml'
+
+def get_theme_zip_path(file_path):
+    ext = os.path.splitext(file_path.lower())[1]
+    if ext == '.pptx':
+        return 'ppt/theme/theme1.xml'
+    elif ext == '.docx':
+        return 'word/theme/theme1.xml'
+    else:
+        return None
 
 
-def replace_theme_xml(pptx_path, theme_xml_path, output_path):
-    """Replace theme1.xml in a single pptx file."""
-    temp_fd, temp_path = tempfile.mkstemp(suffix='.pptx')
+def replace_theme_xml(office_path, theme_xml_path, output_path):
+    """Replace theme1.xml in a single pptx or docx file."""
+    theme_zip_path = get_theme_zip_path(office_path)
+    if not theme_zip_path:
+        print(f"Skipping unsupported file: {office_path}")
+        return
+
+    temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(office_path)[1])
     os.close(temp_fd)
 
-    with zipfile.ZipFile(pptx_path, 'r') as zin:
+    with zipfile.ZipFile(office_path, 'r') as zin:
         with zipfile.ZipFile(temp_path, 'w') as zout:
             for item in zin.infolist():
-                if item.filename != THEME_ZIP_PATH:
+                if item.filename != theme_zip_path:
                     zout.writestr(item, zin.read(item.filename))
 
             with open(theme_xml_path, 'rb') as theme_file:
-                zout.writestr(THEME_ZIP_PATH, theme_file.read())
+                zout.writestr(theme_zip_path, theme_file.read())
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     shutil.move(temp_path, output_path)
@@ -27,10 +40,12 @@ def replace_theme_xml(pptx_path, theme_xml_path, output_path):
 
 
 def process_path(input_path, theme_xml_path, output_folder):
-    """Process either a single pptx file or a directory recursively."""
+    """Process either a single Office file or a directory recursively."""
+    valid_exts = ('.pptx', '.docx')
+
     if os.path.isfile(input_path):
-        if not input_path.lower().endswith('.pptx'):
-            print(f"Skipping non-pptx file: {input_path}")
+        if not input_path.lower().endswith(valid_exts):
+            print(f"Skipping unsupported file: {input_path}")
             return
 
         output_path = os.path.join(output_folder, os.path.basename(input_path))
@@ -42,14 +57,14 @@ def process_path(input_path, theme_xml_path, output_folder):
             dirs[:] = [d for d in dirs if not d.startswith('_')]
 
             for file in files:
-                if file.lower().endswith('.pptx'):
-                    source_pptx = os.path.join(root, file)
+                if file.lower().endswith(valid_exts):
+                    source_file = os.path.join(root, file)
 
                     rel_path = os.path.relpath(root, input_path)
                     target_dir = os.path.join(output_folder, rel_path)
-                    target_pptx = os.path.join(target_dir, file)
+                    target_file = os.path.join(target_dir, file)
 
-                    replace_theme_xml(source_pptx, theme_xml_path, target_pptx)
+                    replace_theme_xml(source_file, theme_xml_path, target_file)
     else:
         print(f"Error: Path '{input_path}' does not exist.")
 
@@ -58,10 +73,11 @@ if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(
             "Usage:\n"
-            "  python replace_theme.py <pptx_or_directory> <theme1.xml> [output_folder]\n\n"
+            "  python replace_theme.py <pptx|docx|directory> <theme1.xml> [output_folder]\n\n"
             "Examples:\n"
             "  python replace_theme.py slides.pptx theme1.xml out/\n"
-            "  python replace_theme.py presentations/ theme1.xml themed_presentations/"
+            "  python replace_theme.py report.docx theme1.xml out/\n"
+            "  python replace_theme.py documents/ theme1.xml themed_docs/"
         )
         sys.exit(1)
 
