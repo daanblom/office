@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-DEFAULT_CSV = "templafy_visibility_audit.csv"
+DEFAULT_CSV = "SearchBinding.csv"
 
 
 def text_of(elem):
@@ -109,8 +109,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Inspect Templafy visibility bindings inside Word (.docx or extracted .zip)",
         epilog="""Examples:
-  templafy_visibility_audit.py "IfElse(Equals(Form.Counterparty.Name" template.docx
-  templafy_visibility_audit.py "Form.Country" template.zip -l
+  searchBinding.py "IfElse(Equals(Form.Counterparty.Name" template.docx
+  searchBinding.py "Form.Country" template.zip -l
 """
     )
 
@@ -120,12 +120,12 @@ def main():
     )
     parser.add_argument(
         "file",
-        help="Path to .docx file or extracted .zip"
+        help="Path to .docx file or .zip"
     )
     parser.add_argument(
         "-l", "--log",
         action="store_true",
-        help="Write results to CSV (templafy_visibility_audit.csv)"
+        help="Write results to CSV (searchBinding.csv)"
     )
 
     args = parser.parse_args()
