@@ -3,6 +3,7 @@ import sys
 import os
 import shutil
 import tempfile
+import argparse
 
 
 def get_theme_zip_path(file_path):
@@ -39,8 +40,8 @@ def replace_theme_xml(office_path, theme_xml_path, output_path):
     print(f"✔ Updated theme: {output_path}")
 
 
-def process_path(input_path, theme_xml_path, output_folder):
-    """Process either a single Office file or a directory recursively."""
+def process_path(input_path, theme_xml_path, output_folder, recursive=False):
+    """Process either a single Office file or a directory."""
     valid_exts = ('.pptx', '.docx')
 
     if os.path.isfile(input_path):
@@ -52,7 +53,13 @@ def process_path(input_path, theme_xml_path, output_folder):
         replace_theme_xml(input_path, theme_xml_path, output_path)
 
     elif os.path.isdir(input_path):
-        for root, dirs, files in os.walk(input_path):
+        if recursive:
+            walker = os.walk(input_path)
+        else:
+            # non-recursive: only one level
+            walker = [(input_path, [], os.listdir(input_path))]
+
+        for root, dirs, files in walker:
             # 🔒 Blacklist directories starting with "_"
             dirs[:] = [d for d in dirs if not d.startswith('_')]
 
@@ -65,29 +72,37 @@ def process_path(input_path, theme_xml_path, output_folder):
                     target_file = os.path.join(target_dir, file)
 
                     replace_theme_xml(source_file, theme_xml_path, target_file)
+
     else:
         print(f"Error: Path '{input_path}' does not exist.")
 
 
-if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print(
-            "Usage:\n"
-            "  python replace_theme.py <pptx|docx|directory> <theme1.xml> [output_folder]\n\n"
-            "Examples:\n"
-            "  python replace_theme.py slides.pptx theme1.xml out/\n"
-            "  python replace_theme.py report.docx theme1.xml out/\n"
-            "  python replace_theme.py documents/ theme1.xml themed_docs/"
-        )
+def main():
+    parser = argparse.ArgumentParser(
+        description="Replace theme1.xml inside pptx/docx files."
+    )
+    parser.add_argument("input_path", help="A .pptx/.docx file or a directory")
+    parser.add_argument("theme_xml", help="Path to theme1.xml replacement file")
+    parser.add_argument(
+        "output_folder",
+        nargs="?",
+        default=".",
+        help="Output folder (default: current directory)",
+    )
+    parser.add_argument(
+        "-r", "--recursive",
+        action="store_true",
+        help="If input_path is a directory, process recursively"
+    )
+
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.theme_xml):
+        print(f"Error: Theme XML file '{args.theme_xml}' not found.")
         sys.exit(1)
 
-    input_path = sys.argv[1]
-    theme_xml_path = sys.argv[2]
-    output_folder = sys.argv[3] if len(sys.argv) > 3 else '.'
+    process_path(args.input_path, args.theme_xml, args.output_folder, recursive=args.recursive)
 
-    if not os.path.isfile(theme_xml_path):
-        print(f"Error: Theme XML file '{theme_xml_path}' not found.")
-        sys.exit(1)
 
-    process_path(input_path, theme_xml_path, output_folder)
-
+if __name__ == "__main__":
+    main()
