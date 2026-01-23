@@ -10,7 +10,7 @@ The repo mainly focuses on **PowerPoint** and **Word** workflows, with scripts d
 
 ## Contents
 
-### PowerPoint utilities
+### General utilities
 
 - **`PPTXtoPOTX.py`**  
   Recursively converts `.pptx` files into `.potx` templates. Useful for standardising decks or extracting reusable templates.
@@ -33,7 +33,7 @@ The repo mainly focuses on **PowerPoint** and **Word** workflows, with scripts d
 - **`insertTheme.py`**  
   Applies or inserts a theme into Word or PowerPoint files programmatically.
 
-### Word utilities
+### Word specific utilities
 
 - **`mergeWord.py`**  
   Merges multiple Word documents into a single output document.
