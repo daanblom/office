@@ -28,10 +28,10 @@ The repo mainly focuses on **PowerPoint** and **Word** workflows, with scripts d
   Searches PowerPoint files for specific bindings / placeholders and reports matches.
 
 - **`extractTheme.py`**  
-  Extracts theme information from PowerPoint files for inspection or reuse.
+  Extracts theme information from Word or PowerPoint files for inspection or reuse.
 
 - **`insertTheme.py`**  
-  Applies or inserts a theme into PowerPoint files programmatically.
+  Applies or inserts a theme into Word or PowerPoint files programmatically.
 
 ### Word utilities
 
@@ -39,7 +39,7 @@ The repo mainly focuses on **PowerPoint** and **Word** workflows, with scripts d
   Merges multiple Word documents into a single output document.
 
 - **`findAssetID.py`**  
-  Searches Word `.docx` / `.dotx` packages (as ZIP files) for a given **asset ID** and reports which internal parts contain it.
+  Searches Word `.docx` / `.dotx` packages for a given **asset ID** and reports which internal parts contain it.
 
 ### Other
 
