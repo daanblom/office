@@ -1,3 +1,8 @@
 .pptx
 .docx
 .env
+bin/
+lib/
+lib64/
+lib64
+pyvenv.cfg
