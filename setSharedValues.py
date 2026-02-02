@@ -87,13 +87,13 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""Examples:
   Dry run (audit only):
-    python templafy_force_sharevalue_true.py template.docx --dry-run
+    python setSharedValues.py template.docx --dry-run
 
   Overwrite file:
-    python templafy_force_sharevalue_true.py template.docx
+    python setSharedValues.py template.docx
 
   Overwrite with backup:
-    python templafy_force_sharevalue_true.py template.docx -b
+    python setSharedValues.py template.docx -b
 """
     )
 
