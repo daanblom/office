@@ -7,6 +7,7 @@ from pathlib import Path
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 DEFAULT_CSV = "SearchBinding.csv"
+SUPPORTED_EXTS = {".docx", ".zip"}
 
 
 def text_of(elem):
@@ -35,53 +36,78 @@ def extract_expressions(xml):
     return list(set(out))
 
 
-def audit(zip_path, search_term):
+def audit(zip_path: Path, search_term: str):
+    """
+    Audits a .docx or .zip (Word package) for SDTs containing search_term.
+    Returns list of result dicts.
+    """
     results = []
 
-    with zipfile.ZipFile(zip_path) as z:
-        if "word/document.xml" not in z.namelist():
-            return results
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            if "word/document.xml" not in z.namelist():
+                return results
 
-        root = ET.fromstring(z.read("word/document.xml"))
-        paragraphs = root.findall(".//w:body//w:p", NS)
+            root = ET.fromstring(z.read("word/document.xml"))
+            paragraphs = root.findall(".//w:body//w:p", NS)
 
-        paragraph_map = []
-        last_heading = ""
+            paragraph_map = []
+            last_heading = ""
 
-        for idx, p in enumerate(paragraphs, 1):
-            txt = text_of(p)
-            if is_heading(p) and txt:
-                last_heading = txt
-            paragraph_map.append((idx, p, last_heading))
+            for idx, p in enumerate(paragraphs, 1):
+                txt = text_of(p)
+                if is_heading(p) and txt:
+                    last_heading = txt
+                paragraph_map.append((idx, p, last_heading))
 
-        for sdt_idx, sdt in enumerate(root.findall(".//w:sdt", NS), 1):
-            xml = ET.tostring(sdt, encoding="unicode")
-            if search_term not in xml:
-                continue
+            for sdt_idx, sdt in enumerate(root.findall(".//w:sdt", NS), 1):
+                xml = ET.tostring(sdt, encoding="unicode")
+                if search_term not in xml:
+                    continue
 
-            visible_text = text_of(sdt.find("w:sdtContent", NS))
-            expressions = extract_expressions(xml)
+                visible_text = text_of(sdt.find("w:sdtContent", NS))
+                expressions = extract_expressions(xml)
 
-            para_index = ""
-            heading = ""
+                para_index = ""
+                heading = ""
 
-            for idx, p, h in paragraph_map:
-                if sdt in list(p.iter()):
-                    para_index = idx
-                    heading = h
-                    break
+                for idx, p, h in paragraph_map:
+                    if sdt in list(p.iter()):
+                        para_index = idx
+                        heading = h
+                        break
 
-            results.append({
-                "SearchTerm": search_term,
-                "SDTIndex": sdt_idx,
-                "ParagraphIndex": para_index,
-                "HeadingContext": heading,
-                "VisibleText": visible_text or "[NO VISIBLE TEXT]",
-                "VisibilityState": "Hidden/Placeholder" if not visible_text else "Visible",
-                "Expressions": " | ".join(expressions)
-            })
+                results.append({
+                    "File": str(zip_path),
+                    "SearchTerm": search_term,
+                    "SDTIndex": sdt_idx,
+                    "ParagraphIndex": para_index,
+                    "HeadingContext": heading,
+                    "VisibleText": visible_text or "[NO VISIBLE TEXT]",
+                    "VisibilityState": "Hidden/Placeholder" if not visible_text else "Visible",
+                    "Expressions": " | ".join(expressions)
+                })
+
+    except zipfile.BadZipFile:
+        # Not a valid zip/docx package; ignore quietly or print warning in caller
+        return results
 
     return results
+
+
+def iter_targets(input_path: Path):
+    """
+    If input_path is a file: yield it.
+    If it's a directory: recursively yield *.docx and *.zip files.
+    """
+    if input_path.is_file():
+        yield input_path
+        return
+
+    if input_path.is_dir():
+        for p in input_path.rglob("*"):
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS:
+                yield p
 
 
 def print_results(results):
@@ -107,10 +133,11 @@ def write_csv(results, filename):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Inspect Templafy visibility bindings inside Word (.docx or extracted .zip)",
+        description="Inspect Templafy visibility bindings inside Word (.docx/.zip) or recursively in a directory",
         epilog="""Examples:
   searchBinding.py "IfElse(Equals(Form.Counterparty.Name" template.docx
   searchBinding.py "Form.Country" template.zip -l
+  searchBinding.py "Form.Country" ./templates/ -l
 """
     )
 
@@ -119,30 +146,57 @@ def main():
         help="Templafy expression or fragment to search for (e.g. IfElse(...))"
     )
     parser.add_argument(
-        "file",
-        help="Path to .docx file or .zip"
+        "path",
+        help="Path to a .docx/.zip file OR a directory (will be searched recursively)"
     )
     parser.add_argument(
         "-l", "--log",
         action="store_true",
-        help="Write results to CSV (searchBinding.csv)"
+        help=f"Write results to CSV ({DEFAULT_CSV})"
+    )
+    parser.add_argument(
+        "--no-skip-badzip",
+        action="store_true",
+        help="If set, prints a warning when a file is not a valid .docx/.zip package"
     )
 
     args = parser.parse_args()
 
-    path = Path(args.file)
-    if not path.exists():
-        print("❌ File does not exist\n")
+    input_path = Path(args.path)
+    if not input_path.exists():
+        print("❌ Path does not exist\n")
         parser.print_help()
         sys.exit(1)
 
-    results = audit(path, args.search_term)
-    print_results(results)
+    # Collect targets
+    targets = list(iter_targets(input_path))
+    if not targets:
+        print("⚠️ No .docx or .zip files found.")
+        sys.exit(0)
 
-    if args.log and results:
-        write_csv(results, DEFAULT_CSV)
+    all_results = []
+    scanned = 0
+
+    for target in targets:
+        scanned += 1
+        res = audit(target, args.search_term)
+        if not res and args.no_skip_badzip and target.suffix.lower() in SUPPORTED_EXTS:
+            # If it was a supported extension but not actually a zip package, audit() returns []
+            # This warning is optional; enable via --no-skip-badzip
+            try:
+                # Quick check to differentiate "valid but no match" from "not a zip"
+                with zipfile.ZipFile(target):
+                    pass
+            except zipfile.BadZipFile:
+                print(f"⚠️ Skipping invalid zip/docx: {target}")
+        all_results.extend(res)
+
+    print(f"🔎 Scanned {scanned} file(s)")
+    print_results(all_results)
+
+    if args.log and all_results:
+        write_csv(all_results, DEFAULT_CSV)
 
 
 if __name__ == "__main__":
     main()
-
