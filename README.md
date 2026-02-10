@@ -120,3 +120,24 @@ Pull requests are welcome. If you have additional Office or document-automation 
 ## License
 
 MIT — use at your own risk. No warranties provided.
+
+# Bonus scripts / funtions
+
+add this bash funtion to your `.bashrc` or `.zshrc` to jump to a directory from a windows path (great if you are using WSL)
+
+usage: `gop "WINDOWS_PATH"`
+
+```
+```bash
+gop() {
+  if [ -z "$1" ]; then
+    echo "Usage: gop <windows-path>"
+    return 1
+  fi
+
+  local og="$1"
+  local np
+  np="$(printf '%s\n' "$og" | sed -E 's#^([A-Za-z]):#\/mnt\/\L\1\/#; s#\\#\/#g')"
+
+  cd "$np"
+}
