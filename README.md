@@ -127,7 +127,6 @@ add this bash funtion to your `.bashrc` or `.zshrc` to jump to a directory from 
 
 usage: `gop "WINDOWS_PATH"`
 
-```
 ```bash
 gop() {
   if [ -z "$1" ]; then
