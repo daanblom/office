@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pptx="${1:-}"
+
+if [[ -z "$pptx" ]]; then
+  echo "Usage: $0 file.pptx"
+  exit 1
+fi
+if [[ ! -f "$pptx" ]]; then
+  echo "Error: file not found: $pptx"
+  exit 1
+fi
+
+base="$(basename "$pptx")"
+stem="${base%.*}"
+workdir="${stem}_work"
+media_dir="$workdir/ppt/media"
+backup_dir="$workdir/_original_media_backup"
+
+# Output file in the CURRENT directory (absolute path)
+outpptx="$(pwd)/${stem}_edited.pptx"
+
+is_wsl() { grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null; }
+
+open_path() {
+  local path="$1"
+
+  if is_wsl && command -v explorer.exe >/dev/null 2>&1; then
+    explorer.exe "$(wslpath -w "$path")" >/dev/null 2>&1 &
+    return
+  fi
+
+  if command -v open >/dev/null 2>&1; then
+    open "$path" >/dev/null 2>&1 &
+    return
+  fi
+
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$path" >/dev/null 2>&1 &
+    return
+  fi
+
+  echo "(Couldn't auto-open file browser. Folder is: $path)"
+}
+
+echo "Preparing work folder..."
+rm -rf "$workdir"
+mkdir -p "$workdir"
+
+echo "Unzipping: $pptx -> $workdir"
+unzip -q "$pptx" -d "$workdir"
+
+if [[ ! -d "$media_dir" ]]; then
+  echo "Error: media folder not found at: $media_dir"
+  exit 1
+fi
+
+echo
+echo "✅ Images folder:"
+echo "   $media_dir"
+open_path "$media_dir"
+
+echo
+echo "Edit/export images so they end with _1 before the extension, e.g.:"
+echo "  image15.png -> image15_1.png"
+echo "  image4.emf  -> image4_1.emf"
+echo
+echo "When you're done editing, press ENTER here to continue."
+read -r -p "> " _
+
+echo
+echo "Scanning for edited files (*_1.png|jpg|jpeg|emf) ..."
+
+mapfile -d '' edited_files < <(
+  find "$media_dir" -maxdepth 1 -type f \
+    \( -iname "*_1.png" -o -iname "*_1.jpg" -o -iname "*_1.jpeg" -o -iname "*_1.emf" \) \
+    -print0
+)
+
+if (( ${#edited_files[@]} == 0 )); then
+  echo "No edited files found. Nothing will be replaced."
+else
+  echo "Found ${#edited_files[@]} edited file(s):"
+  for f in "${edited_files[@]}"; do
+    echo "  - $(basename "$f")"
+  done
+fi
+
+echo
+echo "IMPORTANT: Nothing has been replaced yet."
+echo "If you want to APPLY replacements (with backup), type: apply"
+echo "Otherwise just press ENTER to skip replacement and only rebuild."
+read -r -p "> " action
+
+if [[ "${action,,}" == "apply" && ${#edited_files[@]} -gt 0 ]]; then
+  echo
+  echo "Applying replacements..."
+  mkdir -p "$backup_dir"
+
+  replaced=0
+  skipped=0
+
+  for edited in "${edited_files[@]}"; do
+    filename="$(basename "$edited")"
+    ext="${filename##*.}"
+    name="${filename%.*}"
+
+    orig_name="${name%_1}"
+    orig="$media_dir/${orig_name}.${ext}"
+
+    if [[ ! -f "$orig" ]]; then
+      echo "Skip: $filename (no original $(basename "$orig"))"
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    if [[ ! -f "$backup_dir/$(basename "$orig")" ]]; then
+      cp -p "$orig" "$backup_dir/"
+    fi
+
+    rm -f "$orig"
+    mv -f "$edited" "$orig"
+
+    echo "Replaced: $(basename "$orig") (backup saved)"
+    replaced=$((replaced + 1))
+  done
+
+  echo
+  echo "Summary: replaced=$replaced, skipped=$skipped"
+  echo "Backups are in: $backup_dir"
+else
+  echo "Skipping replacements."
+fi
+
+echo
+echo "Repacking into: $outpptx"
+(
+  cd "$workdir"
+  rm -f "$outpptx"
+  zip -q -r "$outpptx" .
+)
+
+echo "Done ✅ Output PPTX:"
+echo "  $outpptx"
