@@ -11,6 +11,7 @@ WAIT_TIME = 5          # seconds before typing starts
 MIN_DELAY = 0.05       # minimum delay between keystrokes
 MAX_DELAY = 0.15       # maximum delay between keystrokes
 SPACE_DELAY = 0.3      # delay when space is pressed
+ENTER_DELAY = 0.4      # delay when enter/newline is pressed
 
 
 def human_type(text):
@@ -21,7 +22,7 @@ def human_type(text):
 
         elif char == "\n":
             pyautogui.press("enter")
-            time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+            time.sleep(ENTER_DELAY)
 
         else:
             pyautogui.write(char)
