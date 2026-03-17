@@ -10,57 +10,93 @@ The repo mainly focuses on **PowerPoint** and **Word** workflows, with scripts d
 
 ## Contents
 
-### General utilities
+### PowerPoint utilities
 
-- **`PPTXtoPOTX.py`**  
-  Recursively converts `.pptx` files into `.potx` templates. Useful for standardising decks or extracting reusable templates.
+* **`PPTXtoPOTX.py`**
+  Recursively converts `.pptx` files into `.potx` templates.
 
-- **`countSlides.py`**  
-  Counts the number of slides across one or more PowerPoint files.
+* **`countSlides.py`**
+  Counts the number of slides across PowerPoint files.
 
-- **`footerMover.py`**  
-  GUI automation script to assist with repositioning footers on slides in bulk.
+* **`pptFindFont.py`**
+  Searches PowerPoint files for specific fonts.
 
-- **`footerRemover.py`**  
-  GUI automation script to remove footers from slides in bulk.
+* **`pptImageReplacer/`**
+  Utilities for replacing images inside PowerPoint files.
 
-- **`searchBinding.py`**  
-  Searches PowerPoint files for specific bindings / placeholders and reports matches.
+* **`footerMover.py`**
+  GUI automation script to reposition footers.
 
-- **`extractTheme.py`**  
-  Extracts theme information from Word or PowerPoint files for inspection or reuse.
+* **`footerRemover.py`**
+  GUI automation script to remove footers.
 
-- **`insertTheme.py`**  
-  Applies or inserts a theme into Word or PowerPoint files programmatically.
+* **`searchBinding.py`**
+  Searches for bindings/placeholders in PowerPoint files.
 
-### Word specific utilities
+* **`extractTheme.py`**
+  Extracts `theme1.xml` from `.pptx` and `.docx` files.
 
-- **`mergeWord.py`**  
-  Merges multiple Word documents into a single output document.
+* **`insertTheme.py`**
+  Inserts or replaces themes in PowerPoint/Word files.
 
-- **`findAssetID.py`**  
-  Searches Word `.docx` / `.dotx` packages for a given **asset ID** and reports which internal parts contain it.
+---
 
-### Other
+### Word utilities
 
-- **`setSharedValues.py`**  
-  Updates form-like XML content by ensuring fields have `shareValue = true` (supports a `--dry-run` mode).
+* **`mergeWord.py`**
+  Merges multiple Word documents into one.
 
-- **`fillForm/`**  
-  GUI automation tooling for automated form filling. Includes `fillForm.py` and an `example.txt` instruction file.
+* **`findAssetID.py`**
+  Searches `.docx` / `.dotx` files for Templafy asset IDs.
+
+---
+
+### XML / package utilities
+
+* **`setSharedValues.py`**
+  Ensures form XML fields have `shareValue = true`.
+
+---
+
+### Automation & helpers
+
+* **`fillForm/`**
+  GUI automation for filling forms based on instruction files.
+
+* **`humanTyping.py`**
+  Simulates human-like typing input (useful while creating screenflows).
+
+* **`openAll.py`**
+  Opens multiple files in bulk (useful for manual inspection workflows).
+
+---
+
+### Experimental (`alpha/`)
+
+Work-in-progress scripts for Word document styling:
+
+* **`replaceWordColors.py`**
+  Replace colors inside Word documents.
+
+* **`replaceWordFonts.py`**
+  Replace fonts in Word files.
+
+* **`replaceWordFontsize.py`**
+  Adjust font sizes in Word documents.
 
 ---
 
 ## Requirements
 
-- Python 3.9+
-- Install dependencies from `requirements.txt`
+* Python 3.9+
+* Install dependencies from `requirements.txt`
 
-Some scripts rely on:
-- `python-pptx`
-- `python-docx`
-- ZIP/XML parsing utilities
-- GUI automation libraries (e.g. `pyautogui`)
+Common dependencies include:
+
+* `python-pptx`
+* `python-docx`
+* XML / ZIP handling
+* GUI automation libraries (e.g. `pyautogui`)
 
 > ⚠️ **Note:** GUI automation scripts interact with your mouse and keyboard. Close other applications and use with care.
 
@@ -69,57 +105,50 @@ Some scripts rely on:
 ## Quick start
 
 ```bash
-# 1) Create a virtual environment (recommended)
 python -m venv .venv
 
-# 2) Activate it
-# Windows
-.venv\Scripts\activate
+# Activate
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate   # macOS/Linux
 
-# macOS / Linux
-source .venv/bin/activate
-
-# 3) Install dependencies
 pip install -r requirements.txt
 ```
 
-Run a script directly, for example:
+Run a script:
 
 ```bash
-python PPTXtoPOTX.py /path/to/presentations
+python extractTheme.py input.pptx out
 ```
 
-Most scripts either:
-- accept CLI arguments (via `argparse`), or
-- can be adjusted via constants at the top of the file.
+Most scripts:
+
+* support CLI arguments, or
+* use configurable constants at the top of the file.
 
 ---
 
 ## Tips & troubleshooting
 
-- **Scripts running too fast / too slow**  
-  Adjust `time.sleep(...)` values inside the script.
+* **GUI automation behaving weirdly**
+  Ensure the correct window is focused and no dialogs are open.
 
-- **Accidentally spamming inputs (GUI automation)**  
-  Stop the script with `Ctrl + C`. Consider adding an initial delay before automation starts.
+* **Scripts too fast/slow**
+  Adjust `time.sleep()` values.
 
-- **Unexpected PowerPoint / Word behaviour**  
-  Make sure no modal dialogs are open and that the target window is focused.
+* **Automation safety**
+  Keep your mouse away during execution or add startup delays.
 
 ---
 
 ## Contributing
 
-Pull requests are welcome. If you have additional Office or document-automation chores to add:
-
-1. Open an issue describing the use-case, or
-2. Submit a PR with a clearly named script and brief inline documentation.
+Feel free to add scripts for repetitive Office tasks.
 
 ---
 
 ## License
 
-MIT — use at your own risk. No warranties provided.
+MIT — use at your own risk.
 
 # Bonus scripts / funtions
 
