@@ -21,9 +21,6 @@ The repo mainly focuses on **PowerPoint** and **Word** workflows, with scripts d
 * **`pptFindFont.py`**
   Searches PowerPoint files for specific fonts.
 
-* **`pptImageReplacer/`**
-  Utilities for replacing images inside PowerPoint files.
-
 * **`footerMover.py`**
   GUI automation script to reposition footers.
 
@@ -83,6 +80,9 @@ Work-in-progress scripts for Word document styling:
 
 * **`replaceWordFontsize.py`**
   Adjust font sizes in Word documents.
+
+* **`pptImageReplacer/`**
+  Utilities for replacing images inside PowerPoint files.
 
 ---
 
