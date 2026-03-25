@@ -14,11 +14,6 @@ XML_EXTENSIONS = {".xml", ".rels"}
 
 
 def replace_in_docx(docx_path: Path, write_changes: bool = True) -> int:
-    """
-    Replace text inside XML parts of a DOCX file.
-    Returns number of replacements.
-    If write_changes=False → dry run.
-    """
     total_replacements = 0
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -118,9 +113,9 @@ def main():
     )
 
     parser.add_argument(
-        "-n", "--non-recursive",
+        "-r", "--recursive",
         action="store_true",
-        help="Do not process subfolders"
+        help="Process subfolders recursively"
     )
 
     args = parser.parse_args()
@@ -133,7 +128,7 @@ def main():
 
     process_folder(
         folder=folder,
-        recursive=not args.non_recursive,
+        recursive=args.recursive,
         backup=args.backup,
         dry_run=args.dry_run
     )
