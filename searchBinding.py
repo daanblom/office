@@ -4,6 +4,8 @@ import csv
 import argparse
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import tempfile
+import os
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 DEFAULT_CSV = "SearchBinding.csv"
@@ -36,19 +38,81 @@ def extract_expressions(xml):
     return list(set(out))
 
 
-def audit(zip_path: Path, search_term: str):
+def replace_in_zip_entry(zip_path: Path, entry_name: str, old: str, new: str):
+    """
+    Rewrites a single entry inside a zip/docx package.
+    Returns the number of replacements made in the entry.
+    """
+    total_replacements = 0
+    tmp_path = None
+
+    try:
+        # Create temp file in the same directory as the target to avoid cross-device move errors
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=zip_path.suffix,
+            dir=str(zip_path.parent)
+        ) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+
+        with zipfile.ZipFile(zip_path, "r") as zin, zipfile.ZipFile(tmp_path, "w") as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+
+                if item.filename == entry_name:
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = data.decode("utf-8", errors="replace")
+
+                    count = text.count(old)
+                    if count:
+                        text = text.replace(old, new)
+                        data = text.encode("utf-8")
+                        total_replacements += count
+
+                zout.writestr(item, data)
+
+        # Preserve file mode where possible
+        try:
+            st = zip_path.stat()
+            os.chmod(tmp_path, st.st_mode)
+        except OSError:
+            pass
+
+        # Atomic replace in same directory/filesystem
+        os.replace(tmp_path, zip_path)
+
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    return total_replacements
+
+
+def audit(zip_path: Path, search_term: str, replace_old: str = None, replace_new: str = None, dry_run: bool = False):
     """
     Audits a .docx or .zip (Word package) for SDTs containing search_term.
-    Returns list of result dicts.
+    Optionally replaces replace_old -> replace_new inside word/document.xml.
+    Returns:
+      - results: list of result dicts
+      - replacement_count: number of actual replacements made in file
+      - potential_replacement_count: number of matching occurrences found in matching SDTs
     """
     results = []
+    replacement_count = 0
+    potential_replacement_count = 0
 
     try:
         with zipfile.ZipFile(zip_path) as z:
             if "word/document.xml" not in z.namelist():
-                return results
+                return results, replacement_count, potential_replacement_count
 
-            root = ET.fromstring(z.read("word/document.xml"))
+            xml_bytes = z.read("word/document.xml")
+            root = ET.fromstring(xml_bytes)
             paragraphs = root.findall(".//w:body//w:p", NS)
 
             paragraph_map = []
@@ -59,6 +123,8 @@ def audit(zip_path: Path, search_term: str):
                 if is_heading(p) and txt:
                     last_heading = txt
                 paragraph_map.append((idx, p, last_heading))
+
+            matching_sdts_for_replace = 0
 
             for sdt_idx, sdt in enumerate(root.findall(".//w:sdt", NS), 1):
                 xml = ET.tostring(sdt, encoding="unicode")
@@ -77,7 +143,7 @@ def audit(zip_path: Path, search_term: str):
                         heading = h
                         break
 
-                results.append({
+                row = {
                     "File": str(zip_path),
                     "SearchTerm": search_term,
                     "SDTIndex": sdt_idx,
@@ -86,13 +152,33 @@ def audit(zip_path: Path, search_term: str):
                     "VisibleText": visible_text or "[NO VISIBLE TEXT]",
                     "VisibilityState": "Hidden/Placeholder" if not visible_text else "Visible",
                     "Expressions": " | ".join(expressions)
-                })
+                }
+
+                if replace_old is not None:
+                    occurrences = xml.count(replace_old)
+                    potential_replacement_count += occurrences
+                    if occurrences > 0:
+                        matching_sdts_for_replace += 1
+
+                    row["ReplacementOld"] = replace_old
+                    row["ReplacementNew"] = replace_new
+                    row["OccurrencesInSDT"] = occurrences
+                    row["DryRun"] = "Yes" if dry_run else "No"
+
+                results.append(row)
+
+        if replace_old is not None and matching_sdts_for_replace > 0 and not dry_run:
+            replacement_count = replace_in_zip_entry(
+                zip_path,
+                "word/document.xml",
+                replace_old,
+                replace_new
+            )
 
     except zipfile.BadZipFile:
-        # Not a valid zip/docx package; ignore quietly or print warning in caller
-        return results
+        return results, replacement_count, potential_replacement_count
 
-    return results
+    return results, replacement_count, potential_replacement_count
 
 
 def iter_targets(input_path: Path):
@@ -133,21 +219,41 @@ def write_csv(results, filename):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Inspect Templafy visibility bindings inside Word (.docx/.zip) or recursively in a directory",
+        description="Inspect Templafy visibility bindings inside Word (.docx/.zip) files or recursively in a directory.",
         epilog="""Examples:
-  searchBinding.py "IfElse(Equals(Form.Counterparty.Name" template.docx
-  searchBinding.py "Form.Country" template.zip -l
-  searchBinding.py "Form.Country" ./templates/ -l
-"""
+  Search only:
+    python searchBinding.py "Form.Country" template.docx
+    python searchBinding.py "Form.Country" ./templates/ -l
+
+  Replace using OLD as the search term:
+    python searchBinding.py -r "NL-nl" "nl-NL" .
+    python searchBinding.py -r "Form.Country" "Form.CountryCode" ./templates/ -l
+
+  Replace using an explicit search term:
+    python searchBinding.py "IfElse(" . -r "NL-nl" "nl-NL"
+
+  Dry run:
+    python searchBinding.py -r "NL-nl" "nl-NL" . -d
+    python searchBinding.py "IfElse(" . -r "NL-nl" "nl-NL" --dry-run -l
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument(
-        "search_term",
-        help="Templafy expression or fragment to search for (e.g. IfElse(...))"
+        "args",
+        nargs="+",
+        help="Either [search_term path] or [path] when using -r"
     )
     parser.add_argument(
-        "path",
-        help="Path to a .docx/.zip file OR a directory (will be searched recursively)"
+        "-r", "--replace",
+        nargs=2,
+        metavar=("OLD", "NEW"),
+        help="Replace OLD with NEW inside word/document.xml for files where matching SDTs are found"
+    )
+    parser.add_argument(
+        "-d", "--dry-run",
+        action="store_true",
+        help="Preview replacements without modifying files"
     )
     parser.add_argument(
         "-l", "--log",
@@ -161,14 +267,39 @@ def main():
     )
 
     args = parser.parse_args()
+    args_list = args.args
 
-    input_path = Path(args.path)
+    if args.replace:
+        replace_old, replace_new = args.replace
+
+        if len(args_list) == 1:
+            search_term = replace_old
+            path_str = args_list[0]
+        elif len(args_list) == 2:
+            search_term, path_str = args_list
+        else:
+            print("❌ Invalid arguments for replace mode\n")
+            parser.print_help()
+            sys.exit(1)
+    else:
+        if len(args_list) != 2:
+            print("❌ search_term and path are required\n")
+            parser.print_help()
+            sys.exit(1)
+
+        search_term, path_str = args_list
+        replace_old = None
+        replace_new = None
+
+        if args.dry_run:
+            print("⚠️ -d/--dry-run has no effect unless --replace is used")
+
+    input_path = Path(path_str)
     if not input_path.exists():
         print("❌ Path does not exist\n")
         parser.print_help()
         sys.exit(1)
 
-    # Collect targets
     targets = list(iter_targets(input_path))
     if not targets:
         print("⚠️ No .docx or .zip files found.")
@@ -176,23 +307,50 @@ def main():
 
     all_results = []
     scanned = 0
+    changed_files = 0
+    total_replacements = 0
+    total_potential_replacements = 0
 
     for target in targets:
         scanned += 1
-        res = audit(target, args.search_term)
+        res, replacement_count, potential_count = audit(
+            target,
+            search_term,
+            replace_old,
+            replace_new,
+            dry_run=args.dry_run
+        )
+
+        if replace_old is not None:
+            total_potential_replacements += potential_count
+
+            if args.dry_run and potential_count > 0:
+                print(f"🧪 Dry run: would update {target} ({potential_count} replacement(s))")
+                changed_files += 1
+            elif replacement_count > 0:
+                print(f"✏️ Updated: {target} ({replacement_count} replacement(s))")
+                changed_files += 1
+                total_replacements += replacement_count
+
         if not res and args.no_skip_badzip and target.suffix.lower() in SUPPORTED_EXTS:
-            # If it was a supported extension but not actually a zip package, audit() returns []
-            # This warning is optional; enable via --no-skip-badzip
             try:
-                # Quick check to differentiate "valid but no match" from "not a zip"
                 with zipfile.ZipFile(target):
                     pass
             except zipfile.BadZipFile:
                 print(f"⚠️ Skipping invalid zip/docx: {target}")
+
         all_results.extend(res)
 
     print(f"🔎 Scanned {scanned} file(s)")
     print_results(all_results)
+
+    if args.replace:
+        if args.dry_run:
+            print(f"🧪 Dry run summary: {changed_files} file(s) would be updated")
+            print(f"🧪 Potential replacements found: {total_potential_replacements}")
+        else:
+            print(f"🔁 Replacements applied in {changed_files} file(s)")
+            print(f"🔁 Total replacements made: {total_replacements}")
 
     if args.log and all_results:
         write_csv(all_results, DEFAULT_CSV)
