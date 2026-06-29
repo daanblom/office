@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import tempfile
 import os
+import html
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 DEFAULT_CSV = "SearchBinding.csv"
@@ -128,11 +129,12 @@ def audit(zip_path: Path, search_term: str, replace_old: str = None, replace_new
 
             for sdt_idx, sdt in enumerate(root.findall(".//w:sdt", NS), 1):
                 xml = ET.tostring(sdt, encoding="unicode")
-                if search_term not in xml:
+                xml_unescaped = html.unescape(xml)
+                if search_term not in xml_unescaped:
                     continue
 
                 visible_text = text_of(sdt.find("w:sdtContent", NS))
-                expressions = extract_expressions(xml)
+                expressions = extract_expressions(xml_unescaped)
 
                 para_index = ""
                 heading = ""
@@ -155,7 +157,7 @@ def audit(zip_path: Path, search_term: str, replace_old: str = None, replace_new
                 }
 
                 if replace_old is not None:
-                    occurrences = xml.count(replace_old)
+                    occurrences = xml.xml_unescaped.count(replace_old)
                     potential_replacement_count += occurrences
                     if occurrences > 0:
                         matching_sdts_for_replace += 1
