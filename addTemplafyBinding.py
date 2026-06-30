@@ -276,6 +276,79 @@ def _is_sdt(elem: ET.Element) -> bool:
     return elem.tag == wtag("sdt")
 
 
+def _split_streak(streak_text: str, streak_elems: list[ET.Element], binding: str,
+                  target_ph: str | None) -> tuple[list[ET.Element], int]:
+    """
+    Given a streak of text (from consecutive runs/proofErr siblings) and the
+    original elements, produce a new list of elements with every matching
+    <<placeholder>> wrapped in its own SDT.  Handles multiple placeholders
+    within the same streak (e.g. "<<StudyTitle>> | <<CRM>> | 6/25/2021").
+    """
+    # Get the run to use as a formatting template
+    tmpl_run = next((e for e in streak_elems
+                     if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
+    last_run = next((e for e in reversed(streak_elems)
+                     if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
+
+    result: list[ET.Element] = []
+    n_bound = 0
+    cursor = 0
+
+    for m in _PH_RE.finditer(streak_text):
+        ph_name = m.group(1)
+        ph_full = m.group(0)          # the full <<name>> token
+        start, end = m.start(), m.end()
+
+        # Skip if not our target
+        if target_ph and ph_name != target_ph:
+            continue
+
+        # Emit any literal text before this placeholder
+        if start > cursor:
+            before = streak_text[cursor:start]
+            br = ET.Element(wtag("r"))
+            if tmpl_run is not None:
+                rpr = tmpl_run.find(wtag("rPr"))
+                if rpr is not None:
+                    br.append(copy.deepcopy(rpr))
+            t_el = ET.SubElement(br, wtag("t"))
+            t_el.text = before
+            t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            result.append(br)
+
+        # Build the placeholder run, preserving formatting from the template
+        ph_run = ET.Element(wtag("r"))
+        if tmpl_run is not None:
+            rpr = tmpl_run.find(wtag("rPr"))
+            if rpr is not None:
+                ph_run.append(copy.deepcopy(rpr))
+        t_el = ET.SubElement(ph_run, wtag("t"))
+        t_el.text = ph_full
+        result.append(_make_sdt(binding, [ph_run]))
+        n_bound += 1
+        cursor = end
+
+    if n_bound == 0:
+        # Nothing matched — return original elements unchanged
+        return streak_elems, 0
+
+    # Emit any trailing literal text after the last placeholder
+    if cursor < len(streak_text):
+        after = streak_text[cursor:]
+        ar = ET.Element(wtag("r"))
+        ref = last_run if last_run is not None else (streak_elems[-1] if streak_elems else None)
+        if ref is not None:
+            rpr = ref.find(wtag("rPr"))
+            if rpr is not None:
+                ar.append(copy.deepcopy(rpr))
+        t_el = ET.SubElement(ar, wtag("t"))
+        t_el.text = after
+        t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        result.append(ar)
+
+    return result, n_bound
+
+
 def bind_paragraph(
     para: ET.Element,
     binding: str,
@@ -283,32 +356,27 @@ def bind_paragraph(
     dry_run: bool,
 ) -> int:
     """
-    Scan a <w:p>'s direct children for unbound <<...>> tokens.
-    Handles tokens split across multiple runs (with proofErr between them).
-
-    Returns the number of SDT wraps applied (or would be applied).
+    Scan a <w:p>'s direct children for unbound <<...>> tokens and wrap each
+    in a Templafy SDT.  Handles:
+      - tokens split across multiple runs by <w:proofErr> elements
+      - multiple placeholders within the same run/streak
+    Returns the number of SDT wraps applied (or that would be applied).
     """
     children = list(para)
-    n_bound = 0
-
-    # We process runs in groups separated by non-run elements.
-    # Strategy: slide a window through the child list collecting run text
-    # until we accumulate a complete <<...>> token, then wrap those runs.
-
-    i = 0
     new_children: list[ET.Element] = []
+    n_bound = 0
+    i = 0
 
     while i < len(children):
         child = children[i]
         local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
 
-        # Non-run, non-proofErr → pass through unchanged
         if local not in ("r", "proofErr"):
             new_children.append(child)
             i += 1
             continue
 
-        # Collect a streak of runs/proofErr elements and look for <<...>> within
+        # Collect a consecutive streak of run/proofErr siblings
         streak_elems: list[ET.Element] = []
         streak_text = ""
         j = i
@@ -322,77 +390,15 @@ def bind_paragraph(
                 streak_text += _run_text(c)
             j += 1
 
-        # Does this streak contain a <<...>> token?
-        ph_match = _PH_RE.search(streak_text)
-        if not ph_match:
-            # No placeholder — keep streak as-is
+        if not _PH_RE.search(streak_text):
             new_children.extend(streak_elems)
             i = j
             continue
 
-        ph_name = ph_match.group(1)
-        if target_ph and ph_name != target_ph:
-            new_children.extend(streak_elems)
-            i = j
-            continue
-
-        # We have a placeholder. Split the streak into:
-        #   before_text | <<ph_name>> | after_text
-        # spanning across the runs.
-        ph_full = f"<<{ph_name}>>"
-        ph_start = streak_text.find(ph_full)
-        ph_end   = ph_start + len(ph_full)
-        before   = streak_text[:ph_start]
-        after    = streak_text[ph_end:]
-
-        # --- Build before runs ---
-        if before:
-            # Copy formatting from first run
-            first_run = next((e for e in streak_elems
-                              if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
-            if first_run is not None:
-                br = copy.deepcopy(first_run)
-                for t in br.iter(wtag("t")):
-                    t.text = before
-                    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-                # Remove extra <t> elements if run was multi-t (rare)
-                ts = list(br.iter(wtag("t")))
-                if len(ts) > 1:
-                    for extra in ts[1:]:
-                        br.remove(extra)
-                new_children.append(br)
-
-        # --- Build the placeholder SDT run ---
-        first_run = next((e for e in streak_elems
-                          if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
-        ph_run = ET.Element(wtag("r"))
-        if first_run is not None:
-            rpr = first_run.find(wtag("rPr"))
-            if rpr is not None:
-                ph_run.append(copy.deepcopy(rpr))
-        t_el = ET.SubElement(ph_run, wtag("t"))
-        t_el.text = ph_full
-
-        sdt = _make_sdt(binding, [ph_run])
-        new_children.append(sdt)
-        n_bound += 1
-
-        # --- Build after runs ---
-        if after:
-            last_run = next((e for e in reversed(streak_elems)
-                             if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
-            if last_run is not None:
-                ar = copy.deepcopy(last_run)
-                for t in ar.iter(wtag("t")):
-                    t.text = after
-                    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-                ts = list(ar.iter(wtag("t")))
-                if len(ts) > 1:
-                    for extra in ts[1:]:
-                        ar.remove(extra)
-                new_children.append(ar)
-
-        i = j  # advance past the whole streak
+        expanded, count = _split_streak(streak_text, streak_elems, binding, target_ph)
+        new_children.extend(expanded)
+        n_bound += count
+        i = j
 
     if n_bound > 0 and not dry_run:
         for child in list(para):
