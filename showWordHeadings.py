@@ -23,9 +23,10 @@ def get_heading_level(style_name: str):
     return None
 
 
-def extract_headings(docx_path: Path, max_level: int):
+def extract_headings(docx_path: Path, selected_level: int):
     """
-    Yield tuples of (heading_level, heading_text) for headings up to max_level.
+    Yield tuples of (heading_level, heading_text) for headings
+    matching exactly the selected level.
     """
     document = Document(docx_path)
 
@@ -36,7 +37,7 @@ def extract_headings(docx_path: Path, max_level: int):
         if heading_level is None:
             continue
 
-        if heading_level == max_level:
+        if heading_level == selected_level:
             text = paragraph.text.strip()
             if text:
                 yield heading_level, text
@@ -44,7 +45,7 @@ def extract_headings(docx_path: Path, max_level: int):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Show headings from a Word .docx file up to a given heading level."
+        description="Show headings from a Word .docx file for a specific heading level."
     )
     parser.add_argument(
         "-l",
@@ -54,7 +55,7 @@ def main():
         required=True,
         choices=range(1, 10),
         metavar="1-9",
-        help="Maximum heading level to show (e.g. 3 shows Heading 1, 2, and 3).",
+        help="Heading level to show exactly (e.g. 4 shows only Heading 4).",
     )
     parser.add_argument(
         "file",
