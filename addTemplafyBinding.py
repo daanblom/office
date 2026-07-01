@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-addTempalfyBinding.py — Find and bind <<Placeholder>> tokens in .docx/.dotx files.
+templafy_tool.py — Find and bind <<Placeholder>> tokens in .docx/.dotx files.
 
 Usage:
-  addTempalfyBinding.py PATH -f [-r] [-d]
-  addTempalfyBinding.py PATH -b BINDING [-p PLACEHOLDER] [-r] [-d]
-  addTempalfyBinding.py PATH -f -b BINDING [-r] [-d]
+  templafy_tool.py PATH -f [-r] [-d]
+  templafy_tool.py PATH -b BINDING [-p PLACEHOLDER] [-r] [-d]
+  templafy_tool.py PATH -f -b BINDING [-r] [-d]
 
 Flags:
   PATH                  File or directory to process.
@@ -85,15 +85,12 @@ def _text_parts(names: list[str]) -> list[str]:
 
 # ── Logical-text extraction (handles split runs) ──────────────────────────────
 
-def _para_logical_text(para: ET.Element, include_sdt: bool = True) -> str:
+def _para_logical_text(para: ET.Element) -> str:
     """
-    Return the concatenated text of all <w:t> elements in direct run children
-    of `para`, spanning across <w:proofErr> elements.
-
-    include_sdt=True  → also include text inside child <w:sdt> sdtContent
-                        (used by -f to list all placeholders including bound ones).
-    include_sdt=False → skip child <w:sdt> elements entirely
-                        (used by bind/dry-run counting to find only unbound text).
+    Return the concatenated text of all <w:t> elements that are *direct*
+    run children of `para` (i.e. not inside a nested sdt's sdtContent).
+    We concatenate across siblings including <w:proofErr> so that a token
+    like <<ClientShortName>> split across three runs is seen as one string.
     """
     parts: list[str] = []
     for child in para:
@@ -105,7 +102,8 @@ def _para_logical_text(para: ET.Element, include_sdt: bool = True) -> str:
                     parts.append(t.text)
         elif tag_local == "proofErr":
             pass  # transparent — don't add text, don't break the stream
-        elif tag_local == "sdt" and include_sdt:
+        elif tag_local == "sdt":
+            # Recurse into sdtContent to collect its text too (for -f listing)
             for sc in child.iter(wtag("sdtContent")):
                 for t in sc.iter(wtag("t")):
                     if t.text:
@@ -269,105 +267,11 @@ def _make_sdt(binding: str, runs: list[ET.Element]) -> ET.Element:
 # ── Paragraph-level binding ───────────────────────────────────────────────────
 
 def _run_text(run: ET.Element) -> str:
-    """Return the plain text of a <w:r>, but only if it is a simple text run.
-    Returns empty string for runs containing drawings, pictures, or AlternateContent
-    so they are never mistakenly treated as plain text in streak processing."""
-    _COMPLEX = {
-        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing",
-        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict",
-        "{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent",
-    }
-    for child in run:
-        if child.tag in _COMPLEX:
-            return ""   # complex run — treat as opaque, no text
     return "".join(t.text or "" for t in run.iter(wtag("t")))
-
-
-def _is_complex_run(run: ET.Element) -> bool:
-    """Return True if this <w:r> contains a drawing, picture, or AlternateContent."""
-    _COMPLEX = {
-        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing",
-        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict",
-        "{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent",
-    }
-    return any(child.tag in _COMPLEX for child in run)
 
 
 def _is_sdt(elem: ET.Element) -> bool:
     return elem.tag == wtag("sdt")
-
-
-def _split_streak(streak_text: str, streak_elems: list[ET.Element], binding: str,
-                  target_ph: str | None) -> tuple[list[ET.Element], int]:
-    """
-    Given a streak of text (from consecutive runs/proofErr siblings) and the
-    original elements, produce a new list of elements with every matching
-    <<placeholder>> wrapped in its own SDT.  Handles multiple placeholders
-    within the same streak (e.g. "<<StudyTitle>> | <<CRM>> | 6/25/2021").
-    """
-    # Get the run to use as a formatting template
-    tmpl_run = next((e for e in streak_elems
-                     if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
-    last_run = next((e for e in reversed(streak_elems)
-                     if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
-
-    result: list[ET.Element] = []
-    n_bound = 0
-    cursor = 0
-
-    for m in _PH_RE.finditer(streak_text):
-        ph_name = m.group(1)
-        ph_full = m.group(0)          # the full <<name>> token
-        start, end = m.start(), m.end()
-
-        # Skip if not our target
-        if target_ph and ph_name != target_ph:
-            continue
-
-        # Emit any literal text before this placeholder
-        if start > cursor:
-            before = streak_text[cursor:start]
-            br = ET.Element(wtag("r"))
-            if tmpl_run is not None:
-                rpr = tmpl_run.find(wtag("rPr"))
-                if rpr is not None:
-                    br.append(copy.deepcopy(rpr))
-            t_el = ET.SubElement(br, wtag("t"))
-            t_el.text = before
-            t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-            result.append(br)
-
-        # Build the placeholder run, preserving formatting from the template
-        ph_run = ET.Element(wtag("r"))
-        if tmpl_run is not None:
-            rpr = tmpl_run.find(wtag("rPr"))
-            if rpr is not None:
-                ph_run.append(copy.deepcopy(rpr))
-        t_el = ET.SubElement(ph_run, wtag("t"))
-        t_el.text = ph_full
-        result.append(_make_sdt(binding, [ph_run]))
-        n_bound += 1
-        cursor = end
-
-    if n_bound == 0:
-        # Nothing matched — return original elements unchanged
-        return streak_elems, 0
-
-    # Emit any trailing literal text after the last placeholder
-    if cursor < len(streak_text):
-        after = streak_text[cursor:]
-        ar = ET.Element(wtag("r"))
-        ref = last_run if last_run is not None else (streak_elems[-1] if streak_elems else None)
-        if ref is not None:
-            rpr = ref.find(wtag("rPr"))
-            if rpr is not None:
-                ar.append(copy.deepcopy(rpr))
-        t_el = ET.SubElement(ar, wtag("t"))
-        t_el.text = after
-        t_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-        result.append(ar)
-
-    return result, n_bound
 
 
 def bind_paragraph(
@@ -377,29 +281,32 @@ def bind_paragraph(
     dry_run: bool,
 ) -> int:
     """
-    Scan a <w:p>'s direct children for unbound <<...>> tokens and wrap each
-    in a Templafy SDT.  Handles:
-      - tokens split across multiple runs by <w:proofErr> elements
-      - multiple placeholders within the same run/streak
-    Returns the number of SDT wraps applied (or that would be applied).
+    Scan a <w:p>'s direct children for unbound <<...>> tokens.
+    Handles tokens split across multiple runs (with proofErr between them).
+
+    Returns the number of SDT wraps applied (or would be applied).
     """
     children = list(para)
-    new_children: list[ET.Element] = []
     n_bound = 0
+
+    # We process runs in groups separated by non-run elements.
+    # Strategy: slide a window through the child list collecting run text
+    # until we accumulate a complete <<...>> token, then wrap those runs.
+
     i = 0
+    new_children: list[ET.Element] = []
 
     while i < len(children):
         child = children[i]
         local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
 
+        # Non-run, non-proofErr → pass through unchanged
         if local not in ("r", "proofErr"):
             new_children.append(child)
             i += 1
             continue
 
-        # Collect a consecutive streak of run/proofErr siblings.
-        # Break immediately on complex runs (drawings, pictures, AlternateContent)
-        # so they are never merged into a text streak and are passed through intact.
+        # Collect a streak of runs/proofErr elements and look for <<...>> within
         streak_elems: list[ET.Element] = []
         streak_text = ""
         j = i
@@ -408,23 +315,79 @@ def bind_paragraph(
             cl = c.tag.split("}")[-1] if "}" in c.tag else c.tag
             if cl not in ("r", "proofErr"):
                 break
-            if cl == "r" and _is_complex_run(c):
-                # Flush any accumulated streak first, then break
-                break
             streak_elems.append(c)
             if cl == "r":
                 streak_text += _run_text(c)
             j += 1
 
-        if not _PH_RE.search(streak_text):
+        # Does this streak contain a <<...>> token?
+        ph_match = _PH_RE.search(streak_text)
+        if not ph_match:
+            # No placeholder — keep streak as-is
             new_children.extend(streak_elems)
             i = j
             continue
 
-        expanded, count = _split_streak(streak_text, streak_elems, binding, target_ph)
-        new_children.extend(expanded)
-        n_bound += count
-        i = j
+        ph_name = ph_match.group(1)
+        if target_ph and ph_name != target_ph:
+            new_children.extend(streak_elems)
+            i = j
+            continue
+
+        # We have a placeholder. Split the streak into:
+        #   before_text | <<ph_name>> | after_text
+        # spanning across the runs.
+        ph_full = f"<<{ph_name}>>"
+        ph_start = streak_text.find(ph_full)
+        ph_end   = ph_start + len(ph_full)
+        before   = streak_text[:ph_start]
+        after    = streak_text[ph_end:]
+
+        # --- Build before runs ---
+        if before:
+            # Copy formatting from first run
+            first_run = next((e for e in streak_elems
+                              if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
+            if first_run is not None:
+                br = copy.deepcopy(first_run)
+                # Remove all existing <w:t> direct children, then add one fresh one
+                for old_t in list(br.findall(wtag("t"))):
+                    br.remove(old_t)
+                t_new = ET.SubElement(br, wtag("t"))
+                t_new.text = before
+                t_new.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+                new_children.append(br)
+
+        # --- Build the placeholder SDT run ---
+        first_run = next((e for e in streak_elems
+                          if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
+        ph_run = ET.Element(wtag("r"))
+        if first_run is not None:
+            rpr = first_run.find(wtag("rPr"))
+            if rpr is not None:
+                ph_run.append(copy.deepcopy(rpr))
+        t_el = ET.SubElement(ph_run, wtag("t"))
+        t_el.text = ph_full
+
+        sdt = _make_sdt(binding, [ph_run])
+        new_children.append(sdt)
+        n_bound += 1
+
+        # --- Build after runs ---
+        if after:
+            last_run = next((e for e in reversed(streak_elems)
+                             if (e.tag.split("}")[-1] if "}" in e.tag else e.tag) == "r"), None)
+            if last_run is not None:
+                ar = copy.deepcopy(last_run)
+                # Remove all existing <w:t> direct children, then add one fresh one
+                for old_t in list(ar.findall(wtag("t"))):
+                    ar.remove(old_t)
+                t_new = ET.SubElement(ar, wtag("t"))
+                t_new.text = after
+                t_new.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+                new_children.append(ar)
+
+        i = j  # advance past the whole streak
 
     if n_bound > 0 and not dry_run:
         for child in list(para):
@@ -453,17 +416,9 @@ def bind_in_xml(
         print(f"  [WARN] XML parse error: {exc}", file=sys.stderr)
         return data, 0
 
-    # Collect paragraphs that are NOT descendants of any <w:sdtContent>
-    # (those are already inside bound SDTs and must not be touched)
-    sdt_content_para_ids: set[int] = set()
-    for sc in root.iter(wtag("sdtContent")):
-        for p in sc.iter(wtag("p")):
-            sdt_content_para_ids.add(id(p))
-
     total = 0
     for para in root.iter(wtag("p")):
-        if id(para) in sdt_content_para_ids:
-            continue
+        # Skip paragraphs that are children of sdtContent (already bound)
         total += bind_paragraph(para, binding, target_ph, dry_run)
 
     if total == 0 or dry_run:
@@ -501,14 +456,8 @@ def bind_in_docx(
                     if not targets:
                         continue
                     root = ET.fromstring(data)
-                    sdt_content_para_ids: set[int] = set()
-                    for sc in root.iter(wtag("sdtContent")):
-                        for p in sc.iter(wtag("p")):
-                            sdt_content_para_ids.add(id(p))
                     for para in root.iter(wtag("p")):
-                        if id(para) in sdt_content_para_ids:
-                            continue
-                        t = _para_logical_text(para, include_sdt=False)
+                        t = _para_logical_text(para)
                         for m in _PH_RE.finditer(t):
                             ph = m.group(1)
                             if ph in targets:
@@ -561,7 +510,7 @@ def collect_docx(path: Path, recursive: bool) -> list[Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="addTempalfyBinding.py",
+        prog="templafy_tool.py",
         description=(
             "Inspect and add Templafy SDT bindings to <<Placeholder>> tokens "
             "in .docx / .dotx files."
