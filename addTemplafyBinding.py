@@ -269,7 +269,28 @@ def _make_sdt(binding: str, runs: list[ET.Element]) -> ET.Element:
 # ── Paragraph-level binding ───────────────────────────────────────────────────
 
 def _run_text(run: ET.Element) -> str:
+    """Return the plain text of a <w:r>, but only if it is a simple text run.
+    Returns empty string for runs containing drawings, pictures, or AlternateContent
+    so they are never mistakenly treated as plain text in streak processing."""
+    _COMPLEX = {
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing",
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict",
+        "{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent",
+    }
+    for child in run:
+        if child.tag in _COMPLEX:
+            return ""   # complex run — treat as opaque, no text
     return "".join(t.text or "" for t in run.iter(wtag("t")))
+
+
+def _is_complex_run(run: ET.Element) -> bool:
+    """Return True if this <w:r> contains a drawing, picture, or AlternateContent."""
+    _COMPLEX = {
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing",
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict",
+        "{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent",
+    }
+    return any(child.tag in _COMPLEX for child in run)
 
 
 def _is_sdt(elem: ET.Element) -> bool:
@@ -376,7 +397,9 @@ def bind_paragraph(
             i += 1
             continue
 
-        # Collect a consecutive streak of run/proofErr siblings
+        # Collect a consecutive streak of run/proofErr siblings.
+        # Break immediately on complex runs (drawings, pictures, AlternateContent)
+        # so they are never merged into a text streak and are passed through intact.
         streak_elems: list[ET.Element] = []
         streak_text = ""
         j = i
@@ -384,6 +407,9 @@ def bind_paragraph(
             c = children[j]
             cl = c.tag.split("}")[-1] if "}" in c.tag else c.tag
             if cl not in ("r", "proofErr"):
+                break
+            if cl == "r" and _is_complex_run(c):
+                # Flush any accumulated streak first, then break
                 break
             streak_elems.append(c)
             if cl == "r":
