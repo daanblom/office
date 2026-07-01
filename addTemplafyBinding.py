@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-templafy_tool.py — Find and bind <<Placeholder>> tokens in .docx/.dotx files.
+addTempalfyBinding.py — Find and bind <<Placeholder>> tokens in .docx/.dotx files.
 
 Usage:
-  templafy_tool.py PATH -f [-r] [-d]
-  templafy_tool.py PATH -b BINDING [-p PLACEHOLDER] [-r] [-d]
-  templafy_tool.py PATH -f -b BINDING [-r] [-d]
+  addTempalfyBinding.py PATH -f [-r] [-d]
+  addTempalfyBinding.py PATH -b BINDING [-p PLACEHOLDER] [-r] [-d]
+  addTempalfyBinding.py PATH -f -b BINDING [-r] [-d]
 
 Flags:
   PATH                  File or directory to process.
@@ -561,7 +561,7 @@ def collect_docx(path: Path, recursive: bool) -> list[Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="templafy_tool.py",
+        prog="addTempalfyBinding.py",
         description=(
             "Inspect and add Templafy SDT bindings to <<Placeholder>> tokens "
             "in .docx / .dotx files."
