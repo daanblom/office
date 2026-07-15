@@ -1,12 +1,12 @@
 import argparse
-from pathlib import Path
+import re
 import zipfile
 import shutil
 import tempfile
+from pathlib import Path
 
 REPLACEMENTS = {
-    'CRMNumber':
-    'CRM_Number'
+    'CRMNumber': 'CRM_Number'
 }
 
 XML_EXTENSIONS = {".xml", ".rels"}
@@ -26,11 +26,9 @@ def variants(s: str) -> set[str]:
     xml = s.replace('"', "&quot;")
     v.add(xml)
 
-    # Seen in w:tag JSON payloads: \" becomes \\&quot; in the XML text
     v.add(s.replace('"', r"\""))
     v.add(s.replace('"', r"\\\""))
 
-    # Combine with &quot; then escape slashes
     v.add(xml.replace("&quot;", r"\\&quot;"))
     v.add(xml.replace("&quot;", r"\&quot;"))
 
@@ -49,11 +47,9 @@ def replace_many(text: str, replacements: dict[str, str]) -> tuple[str, int]:
         old_vars = variants(old)
         new_vars = {}
 
-        # Map each old-variant to the corresponding new-variant in the same encoding style.
         for ov in old_vars:
             if "&quot;" in ov:
                 nv = new.replace('"', "&quot;")
-                # preserve \\&quot; style if present in ov
                 if r"\\&quot;" in ov:
                     nv = nv.replace("&quot;", r"\\&quot;")
                 elif r"\&quot;" in ov:
@@ -66,7 +62,6 @@ def replace_many(text: str, replacements: dict[str, str]) -> tuple[str, int]:
             else:
                 new_vars[ov] = new
 
-        # Apply all variant replacements
         for ov, nv in new_vars.items():
             c = updated.count(ov)
             if c:
@@ -75,6 +70,76 @@ def replace_many(text: str, replacements: dict[str, str]) -> tuple[str, int]:
 
     return updated, total
 
+
+# ---------------------------------------------------------------------------
+# Binding listing
+# ---------------------------------------------------------------------------
+
+# Matches binding names as they appear in Templafy w:tag JSON payloads and
+# similar XML attribute values, e.g.:
+#   "fieldName":"CRMNumber"
+#   "name":"SomeBinding"
+# Captures the value between the quotes after the colon.
+# Matches any {{ ... }} expression in raw XML text.
+# Handles both literal {{ }} and XML-escaped {{ (&amp;amp; etc. are unlikely here,
+# but &amp; in attribute values is possible — we normalise before matching).
+_BINDING_RE = re.compile(r'\{\{([^}]+)\}\}')
+
+
+def list_bindings_in_docx(docx_path: Path) -> list[str]:
+    """
+    Return all {{ }} binding expressions found in the XML parts of a .docx file.
+    Results are in order of appearance; duplicates are preserved.
+    Strips surrounding whitespace from each match.
+    """
+    found = []
+
+    try:
+        with zipfile.ZipFile(docx_path, "r") as zin:
+            for entry in zin.namelist():
+                suffix = Path(entry).suffix.lower()
+                if suffix not in XML_EXTENSIONS:
+                    continue
+                try:
+                    content = zin.read(entry).decode("utf-8")
+                except (UnicodeDecodeError, KeyError):
+                    continue
+
+                # Normalise XML escaping so {{ }} aren't obscured
+                # Normalise XML and JSON escape variants before matching
+                content_clean = (
+                    content
+                    .replace("&quot;", '"')
+                    .replace("&amp;", "&")
+                    .replace('\\"', '"')      # \" → " (JSON-escaped quotes in XML attributes)
+                    .replace('\\\\"', '"')    # \\\" → " (double-escaped variant)
+)
+                for match in _BINDING_RE.finditer(content_clean):
+                    found.append("{{" + match.group(1).strip() + "}}")
+
+    except zipfile.BadZipFile:
+        print(f"ERROR: {docx_path} → not a valid .docx (BadZipFile)")
+
+    return found
+
+def print_bindings(docx_file: Path, unique: bool):
+    bindings = list_bindings_in_docx(docx_file)
+
+    if not bindings:
+        print(f"{docx_file}: no bindings found")
+        return
+
+    if unique:
+        bindings = sorted(set(bindings))
+
+    print(f"\n{docx_file} — {len(bindings)} binding(s){'  [unique]' if unique else ''}:")
+    for b in bindings:
+        print(f"  {b}")
+
+
+# ---------------------------------------------------------------------------
+# Replacement logic (unchanged)
+# ---------------------------------------------------------------------------
 
 def replace_in_docx(docx_path: Path, write_changes: bool = True) -> int:
     total_replacements = 0
@@ -87,7 +152,6 @@ def replace_in_docx(docx_path: Path, write_changes: bool = True) -> int:
         with zipfile.ZipFile(docx_path, "r") as zin:
             zin.extractall(extract_dir)
 
-        # Process XML-ish parts
         for file_path in extract_dir.rglob("*"):
             if not file_path.is_file():
                 continue
@@ -153,22 +217,54 @@ def process_folder(folder: Path, recursive: bool, backup: bool, dry_run: bool):
         process_docx_file(docx_file=docx_file, backup=backup, dry_run=dry_run)
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 def main():
-    parser = argparse.ArgumentParser(description="Replace Templafy bindings in DOCX files")
+    parser = argparse.ArgumentParser(
+        description="Replace or inspect Templafy bindings in DOCX files"
+    )
 
     parser.add_argument("path", help="Path to a .docx file OR a folder containing .docx files")
 
-    parser.add_argument("-b", "--backup", action="store_true", help="Create .bak backup files")
-    parser.add_argument("-d", "--dry-run", action="store_true", help="Preview changes without modifying files")
+    parser.add_argument("-b", "--backup", action="store_true", help="Create .bak backup files before modifying")
+    parser.add_argument("-d", "--dry-run", action="store_true", help="Preview replacements without modifying files")
     parser.add_argument("-r", "--recursive", action="store_true", help="Process subfolders recursively (folders only)")
+    parser.add_argument("-l", "--list", action="store_true", help="List all bindings found in the file(s) without making changes")
+    parser.add_argument("-u", "--unique", action="store_true", help="When used with -l: show only unique bindings, sorted alphabetically")
 
     args = parser.parse_args()
+
+    # Validate -u dependency
+    if args.unique and not args.list:
+        parser.error("-u / --unique requires -l / --list")
+
     target = Path(args.path)
 
     if not target.exists():
         print("Invalid path: does not exist.")
         return
 
+    # -l mode: list bindings, skip replacement logic
+    if args.list:
+        if target.is_file():
+            if target.suffix.lower() != ".docx":
+                print(f"Skipped (not .docx): {target}")
+                return
+            print_bindings(target, unique=args.unique)
+
+        elif target.is_dir():
+            pattern = "**/*.docx" if args.recursive else "*.docx"
+            files = list(target.glob(pattern))
+            if not files:
+                print("No .docx files found.")
+                return
+            for docx_file in files:
+                print_bindings(docx_file, unique=args.unique)
+        return
+
+    # Default mode: replacement
     if target.is_file():
         process_docx_file(docx_file=target, backup=args.backup, dry_run=args.dry_run)
         return
