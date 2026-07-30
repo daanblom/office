@@ -7,10 +7,13 @@ from pathlib import Path
 from docx import Document
 
 
+from docx.oxml.ns import qn
+
 def extract_text_from_docx(file_path: Path):
     """
     Yield text blocks from a .docx file.
     Includes paragraphs and table cell content.
+    Uses low-level XML iteration to avoid python-docx bugs with merged cells.
     """
     try:
         doc = Document(file_path)
@@ -24,14 +27,26 @@ def extract_text_from_docx(file_path: Path):
         if text:
             yield text
 
-    # Tables
+    # Tables — iterate XML directly to avoid merged-cell bugs in row.cells
     for table in doc.tables:
         for row in table.rows:
-            for cell in row.cells:
-                text = cell.text.strip()
-                if text:
-                    yield text
-
+            for tc in row._tr.iterchildren(qn("w:tc")):
+                # Collect all paragraph text within this cell element
+                cell_text = " ".join(
+                    p.text for p in (
+                        tc.iterchildren(qn("w:p"))
+                    )
+                    if p.text and p.text.strip()
+                )
+                # Also handle nested paragraphs deeper in the XML
+                if not cell_text:
+                    cell_text = " ".join(
+                        node.text or ""
+                        for node in tc.iter()
+                        if node.tag == qn("w:t") and node.text
+                    ).strip()
+                if cell_text.strip():
+                    yield cell_text.strip()
 
 def find_docx_files(paths, recursive=False):
     """
