@@ -13,3 +13,4 @@ result=$(echo "$input" \
     }')
 
 printf "%s\n" "$result"
+echo "$result" | CLIP.exe || echo "Could not copy to clipboard"
